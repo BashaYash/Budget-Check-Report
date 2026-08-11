@@ -1,10 +1,13 @@
 <mvc:View
     controllerName="com.onex.budgetcheck.controller.Home"
     xmlns:mvc="sap.ui.core.mvc"
+    xmlns:viz="sap.viz.ui5.controls"
+    xmlns:vizdata="sap.viz.ui5.data"
+    xmlns:vizfeed="sap.viz.ui5.controls.common.feeds"
     xmlns="sap.m">
 
     <Page id="page" title="{i18n>title}">
-        <content>
+        <content>        
             <HBox
                 class="sapUiMediumMargin"
                 alignItems="Center"
@@ -50,6 +53,42 @@
                     class="sapUiSmallMarginTop" />
 
             </HBox>
+
+            <!-- Pie chart -->
+            <VBox class="sapUiMediumMargin">
+                <viz:VizFrame
+                    id="budgetPieChart"
+                    uiConfig="{applicationSet:'fiori'}"
+                    vizType="pie"
+                    height="450px"
+                    width="700px"
+                    visible="{chartModel>/hasData}"
+                    selectData="onSliceSelect"
+                    vizProperties="{
+                    title: { visible: true, text: 'Budget Breakdown' },
+                    legend: { visible: true, title: { visible: true, text: 'Budget Type' } },
+                    plotArea: {
+                        dataLabel: { visible: true, showTotal: true }
+                    },
+                    interaction: { selectability: { mode: 'SINGLE' } }
+                }">
+                    <viz:dataset>
+                        <vizdata:FlattenedDataset data="{chartModel>/chartData}">
+                            <vizdata:dimensions>
+                                <vizdata:DimensionDefinition name="Budget Type" value="{chartModel>Category}"/>
+                            </vizdata:dimensions>
+                            <vizdata:measures>
+                                <vizdata:MeasureDefinition name="Amount" value="{chartModel>Value}"/>
+                            </vizdata:measures>
+                        </vizdata:FlattenedDataset>
+                    </viz:dataset>
+                    <viz:feeds>
+                        <vizfeed:FeedItem uid="size" type="Measure" values="Amount"/>
+                        <vizfeed:FeedItem uid="color" type="Dimension" values="Budget Type"/>
+                    </viz:feeds>
+                </viz:VizFrame>
+            </VBox>
+
         </content>
     </Page>
 
