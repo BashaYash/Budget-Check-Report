@@ -1,6 +1,56 @@
-<mvc:View controllerName="com.onex.budgetcheck.controller.Home"
+<mvc:View
+    controllerName="com.onex.budgetcheck.controller.Home"
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m">
+
     <Page id="page" title="{i18n>title}">
+        <content>
+            <HBox
+                class="sapUiMediumMargin"
+                alignItems="Center"
+                justifyContent="Start"
+                renderType="Bare">
+
+                <VBox class="sapUiSmallMarginEnd">
+                    <Label text="Company Code" />
+                    <Input
+                        id="companyCodeInput"
+                        placeholder="Company Code"
+                        width="180px" />
+                </VBox>
+
+                <VBox class="sapUiSmallMarginEnd">
+                    <Label text="Cost Center" />
+                    <Input
+                        id="costCenterInput"
+                        placeholder="Cost Center"
+                        width="180px" />
+                </VBox>
+
+                <VBox class="sapUiSmallMarginEnd">
+                    <Label text="Plant" />
+                    <Input
+                        id="plantInput"
+                        placeholder="Plant"
+                        width="180px" />
+                </VBox>
+
+                <VBox class="sapUiSmallMarginEnd">
+                    <Label text="Department" />
+                    <Input
+                        id="departmentInput"
+                        placeholder="Department"
+                        width="180px" />
+                </VBox>
+
+                <Button
+                    text="Submit"
+                    type="Emphasized"
+                    press=".onSubmit"
+                    class="sapUiSmallMarginTop" />
+
+            </HBox>
+        </content>
     </Page>
+
 </mvc:View>
