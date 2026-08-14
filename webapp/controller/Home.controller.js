@@ -1,16 +1,48 @@
 sap.ui.define([
     "sap/ui/core/mvc/Controller",
     "sap/ui/model/json/JSONModel",
+    "sap/ui/model/Filter",
+    "sap/ui/model/FilterOperator",
     "sap/m/MessageToast",
-    "sap/m/MessageBox"
-], (Controller, JSONModel, MessageToast, MessageBox) => {
+    "sap/m/MessageBox",
+    "sap/m/Popover",
+    "sap/m/VBox",
+    "sap/m/ObjectStatus",
+    "sap/m/SelectDialog",
+    "sap/m/StandardListItem"
+], (Controller, JSONModel, Filter, FilterOperator, MessageToast, MessageBox, Popover, VBox, ObjectStatus, SelectDialog, StandardListItem) => {
     "use strict";
+
+    // Single source of truth for every budget field: which OData property it reads
+    // from, its display label, whether it's a header figure (same value on every
+    // row) or a line item (varies per row), and the color used consistently
+    // across the pie, legend, and bar.
+    const TABLE_FIELDS = [
+        { key: "ccBudget",          label: "CC Budget",              sourceField: "CcBudget",             isHeader: true,  color: "#4EA7F2" },
+        { key: "ioBudget",          label: "IO Budget",              sourceField: "IoBudget",             isHeader: true,  color: "#E07B00" },
+        { key: "availableBudget",   label: "Available Budget",       sourceField: "AvailableBuget",       isHeader: true,  color: "#7CB92C" },
+        { key: "prCommitStock",     label: "PR Commit (Stock)",      sourceField: "PrCommitStockItem",    isHeader: false, color: "#8B5CF6" },
+        { key: "prAsset",           label: "PR Asset",               sourceField: "PrAsset",              isHeader: false, color: "#17A398" },
+        { key: "prCommitNonStock",  label: "PR Commit (Non-Stock)",  sourceField: "PrCommNonStockItem",   isHeader: false, color: "#2B6FDE" },
+        { key: "poNonStock",        label: "PO (Non-Stock)",         sourceField: "TotalPONonStockItem",  isHeader: false, color: "#D6249F" },
+        { key: "poStock",           label: "PO (Stock)",             sourceField: "TotalPoStockItem",     isHeader: false, color: "#6B7280" },
+        { key: "poAsset",           label: "PO Asset",               sourceField: "PoAsset",              isHeader: false, color: "#E06666" },
+        { key: "actualConsumption", label: "Actual Consumption",     sourceField: "ActualConsumption",    isHeader: false, color: "#6F63E0" },
+        { key: "ioConsumption",     label: "IO Consumption",         sourceField: "IoConsump",            isHeader: false, color: "#1E3A8A" }
+    ];
 
     return Controller.extend("com.onex.budgetcheck.controller.Home", {
 
         onInit() {
-            // Empty model up front so the VizFrame has nothing to render until Submit
-            this.getView().setModel(new JSONModel({ chartData: [], hasData: false }), "chartModel");
+            // Empty model up front so the VizFrames have nothing to render until Submit
+            this.getView().setModel(new JSONModel({
+                chartData: [],
+                barData: [],
+                tableRows: [],
+                totalRows: [],
+                hasData: false,
+                summary: {}
+            }), "chartModel");
         },
 
         onSubmit() {
@@ -31,7 +63,7 @@ sap.ui.define([
                             " and (CostCenter eq '" + sCostCenter + "')" +
                             " and (Department eq '" + sDepartment + "')";
 
-            const sUrl = "/sap/opu/odata/sap/ZMM_BUDGET_CHECK_REPORT_SRV/BudgetCheckSet" +
+            const sUrl = this._getServiceUrl() + "BudgetCheckSet" +
                          "?$filter=" + encodeURIComponent(sFilter) +
                          "&$format=json";
 
@@ -47,11 +79,13 @@ sap.ui.define([
 
                     if (!aResults || !aResults.length) {
                         MessageToast.show("No budget data found for the given inputs.");
-                        oView.getModel("chartModel").setData({ chartData: [], hasData: false });
+                        oView.getModel("chartModel").setData({
+                            chartData: [], barData: [], tableRows: [], totalRows: [], hasData: false, summary: {}
+                        });
                         return;
                     }
 
-                    this._updateChart(aResults[0]);
+                    this._updateChart(aResults);
                 },
                 error: () => {
                     oView.setBusy(false);
@@ -60,25 +94,285 @@ sap.ui.define([
             });
         },
 
-        _updateChart(oBudget) {
-            const aChartData = [
-                { Category: "CC Budget",             Value: parseFloat(oBudget.CcBudget) || 0 },
-                { Category: "IO Budget",             Value: parseFloat(oBudget.IoBudget) || 0 },
-                { Category: "PR Commit (Stock)",     Value: parseFloat(oBudget.PrCommitStockItem) || 0 },
-                { Category: "PR Asset",              Value: parseFloat(oBudget.PrAsset) || 0 },
-                { Category: "PR Commit (Non-Stock)", Value: parseFloat(oBudget.PrCommNonStockItem) || 0 },
-                { Category: "PO (Non-Stock)",        Value: parseFloat(oBudget.TotalPONonStockItem) || 0 },
-                { Category: "PO (Stock)",            Value: parseFloat(oBudget.TotalPoStockItem) || 0 },
-                { Category: "PO Asset",              Value: parseFloat(oBudget.PoAsset) || 0 },
-                { Category: "Actual Consumption",    Value: parseFloat(oBudget.ActualConsumption) || 0 },
-                { Category: "IO Consumption",        Value: parseFloat(oBudget.IoConsump) || 0 },
-                { Category: "Available Budget",      Value: parseFloat(oBudget.AvailableBuget) || 0 }
-            ];
+        _getServiceUrl() {
+            return this.getOwnerComponent().getManifestEntry("/sap.app/dataSources/mainService/uri");
+        },
+
+        _updateChart(aResults) {
+            this._aLastResults = aResults;
+            const oFirst = aResults[0];
+            const fTotalBudget = parseFloat(oFirst.TotalBudget) || 0;
+
+            const aTableRows = aResults.map((oRow, iIndex) => {
+                const oRowData = { rowLabel: "Line " + (iIndex + 1), isTotal: false };
+                TABLE_FIELDS.forEach((oField) => {
+                    oRowData[oField.key] = parseFloat(oRow[oField.sourceField]) || 0;
+                });
+                return oRowData;
+            });
+
+            // Chart totals
+            const oChartColumnSums = {};
+            TABLE_FIELDS.forEach((oField) => {
+                oChartColumnSums[oField.key] = oField.isHeader
+                    ? (parseFloat(oFirst[oField.sourceField]) || 0)
+                    : aTableRows.reduce((fSum, oRow) => fSum + oRow[oField.key], 0);
+            });
+
+            // Table Total row: every column summed across all line items,
+            // including the header columns, per request.
+            const oTotalRowSums = {};
+            TABLE_FIELDS.forEach((oField) => {
+                oTotalRowSums[oField.key] = aTableRows.reduce((fSum, oRow) => fSum + oRow[oField.key], 0);
+            });
+            const oTotalRow = Object.assign({ rowLabel: "Total", isTotal: true }, oTotalRowSums);
+
+            // Combined categories for the Pie / Bar / custom legend - one
+            // slice/bar per field, using the chart column sums computed above.
+            const aChartData = TABLE_FIELDS.map((oField) => ({
+                Category: oField.label,
+                Value: oChartColumnSums[oField.key],
+                Color: oField.color
+            }));
 
             this.getView().getModel("chartModel").setData({
-                chartData: aChartData,
-                hasData: true
+                chartData: aChartData,           // feeds the pie + custom legend
+                barData: aChartData,             // feeds the bar - same data, shown side by side
+                tableRows: aTableRows,           // feeds the scrolling body: one row per line item
+                totalRows: [oTotalRow],          // feeds the pinned Total row table
+                hasData: true,
+                summary: {
+                    totalBudget: fTotalBudget,
+                    availableBudget: oChartColumnSums.availableBudget,
+                    currency: oFirst.Currency,
+                    costCenter: oFirst.CostCenter + " – " + oFirst.CostCenter_Text,
+                    company: oFirst.CompanyCode + " – " + oFirst.CompanyName
+                }
             });
+        },
+
+        onSliceSelect(oEvent) {
+            const aData = oEvent.getParameter("data");
+            if (!aData || !aData.length) {
+                return;
+            }
+            const oPoint = aData[0].data;
+            this._showDetailPopover(oPoint["Budget Type"] || oPoint["Item"], oPoint["Amount"], oEvent.getSource());
+        },
+
+        onBarSelect(oEvent) {
+            const aData = oEvent.getParameter("data");
+            if (!aData || !aData.length) {
+                return;
+            }
+            const oPoint = aData[0].data;
+            this._showDetailPopover(oPoint["Budget Type"] || oPoint["Item"], oPoint["Amount"], oEvent.getSource());
+        },
+
+        // Line items list below the charts - kept as a click handler for
+        // touch/keyboard use. Hover is wired up separately below.
+        onLineItemPress(oEvent) {
+            const oCtx = oEvent.getSource().getBindingContext("chartModel");
+            if (!oCtx) {
+                return;
+            }
+            const oItem = oCtx.getObject();
+            this._showDetailPopover(oItem.Category, oItem.Value, oEvent.getSource());
+        },
+
+        // Fires whenever the Budget Type list (re)renders its items. Attaches
+        // native mouseenter/mouseleave handlers to each row so the same detail
+        // popover opens on hover, not just on click.
+        onListUpdateFinished(oEvent) {
+            const oList = oEvent.getSource();
+            const $items = oList.$().find(".sapMLIB");
+
+            $items.off("mouseenter.budgetHover mouseleave.budgetHover");
+
+            $items.on("mouseenter.budgetHover", (oDomEvent) => {
+                const oControl = sap.ui.getCore().byId(oDomEvent.currentTarget.id);
+                if (!oControl) {
+                    return;
+                }
+                const oCtx = oControl.getBindingContext("chartModel");
+                if (!oCtx) {
+                    return;
+                }
+                const oItem = oCtx.getObject();
+                this._showDetailPopover(oItem.Category, oItem.Value, oControl);
+            });
+
+            $items.on("mouseleave.budgetHover", () => {
+                if (this._oDetailPopover && this._oDetailPopover.isOpen()) {
+                    this._oDetailPopover.close();
+                }
+            });
+        },
+
+        _showDetailPopover(sCategory, fValue, oOpenerControl) {
+            if (fValue === undefined || fValue === null) {
+                return;
+            }
+            const sCurrency = this._aLastResults ? this._aLastResults[0].Currency : "";
+
+            if (!this._oDetailPopover) {
+                this._oDetailPopover = new Popover({
+                    title: "Details",
+                    placement: "Top",
+                    content: [
+                        new VBox({
+                            class: "sapUiMediumMargin",
+                            items: [
+                                new ObjectStatus({ title: "Category", text: "{detail>/category}" }),
+                                new ObjectStatus({ title: "Amount", text: "{detail>/amount}" })
+                            ]
+                        })
+                    ]
+                });
+                this.getView().addDependent(this._oDetailPopover);
+            }
+
+            this._oDetailPopover.setModel(new JSONModel({
+                category: sCategory,
+                amount: fValue.toLocaleString(undefined, { minimumFractionDigits: 2 }) + " " + sCurrency
+            }), "detail");
+
+            this._oDetailPopover.openBy(oOpenerControl);
+        },
+
+
+        // F4 value help - Company Code -> Plant (filtered by Company Code)
+        // -> Department (filtered by Plant). Cost Center will follow later.
+
+        onCompanyCodeValueHelp() {
+            const sUrl = this._getServiceUrl() + "CompanyCodeSHSet";
+            this._openValueHelpDialog("Company Code", sUrl, (oSelected) => {
+                const aKeys = Object.keys(oSelected).filter((k) => k !== "__metadata");
+                const sKeyField = aKeys.find((k) => k.toLowerCase() === "companycode") || aKeys[0];
+                this.byId("companyCodeInput").setValue(oSelected[sKeyField]);
+                // Company Code changed - clear the fields that depend on it
+                this.byId("plantInput").setValue("");
+                this.byId("departmentInput").setValue("");
+            });
+        },
+
+        onPlantValueHelp() {
+            const sCompanyCode = this.byId("companyCodeInput").getValue().trim();
+            if (!sCompanyCode) {
+                MessageToast.show("Please select a Company Code first.");
+                return;
+            }
+            const sUrl = this._getServiceUrl() + "PlantSHSet(CompanyCode='" + sCompanyCode + "')";
+            this._openValueHelpDialog("Plant", sUrl, (oSelected) => {
+                const aKeys = Object.keys(oSelected).filter((k) => k !== "__metadata");
+                const sKeyField = aKeys.find((k) => k.toLowerCase().indexOf("plant") > -1) || aKeys[0];
+                this.byId("plantInput").setValue(oSelected[sKeyField]);
+                // Plant changed - clear Department, which depends on it
+                this.byId("departmentInput").setValue("");
+            });
+        },
+
+        onDepartmentValueHelp() {
+            const sPlant = this.byId("plantInput").getValue().trim();
+            if (!sPlant) {
+                MessageToast.show("Please select a Plant first.");
+                return;
+            }
+            const sUrl = this._getServiceUrl() + "DepartmentSHSet(Plant='" + sPlant + "')";
+            this._openValueHelpDialog("Department", sUrl, (oSelected) => {
+                const aKeys = Object.keys(oSelected).filter((k) => k !== "__metadata");
+                const sKeyField = aKeys.find((k) => k.toLowerCase().indexOf("department") > -1) || aKeys[0];
+                this.byId("departmentInput").setValue(oSelected[sKeyField]);
+            });
+        },
+
+        // Generic F4 help: reads sUrl, shows the results in a searchable
+        // SelectDialog, and calls fnOnConfirm(oSelectedRow) when the user picks one
+        _openValueHelpDialog(sTitle, sUrl, fnOnConfirm) {
+            const sReadUrl = sUrl + (sUrl.indexOf("?") > -1 ? "&" : "?") + "$format=json";
+
+            this.getView().setBusy(true);
+
+            jQuery.ajax({
+                url: sReadUrl,
+                type: "GET",
+                dataType: "json",
+                success: (oData) => {
+                    this.getView().setBusy(false);
+                    const oD = oData && oData.d;
+                    let aList = [];
+
+                    if (oD) {
+                        if (Array.isArray(oD.results)) {
+                            aList = oD.results;
+                        } else if (Array.isArray(oD.Results)) {
+                            aList = oD.Results;
+                        } else if (Array.isArray(oD)) {
+                            aList = oD;
+                        } else {
+                            aList = [oD];
+                        }
+                    }
+
+                    if (!aList.length) {
+                        MessageToast.show("No values found.");
+                        return;
+                    }
+
+                    this._showSelectDialog(sTitle, aList, fnOnConfirm);
+                },
+                error: () => {
+                    this.getView().setBusy(false);
+                    MessageBox.error("Failed to load value help data for " + sTitle + ".");
+                }
+            });
+        },
+
+        _showSelectDialog(sTitle, aList, fnOnConfirm) {
+            const aKeys = Object.keys(aList[0]).filter((k) => k !== "__metadata");
+            const sKeyField = aKeys[0];
+            const aDescFields = aKeys.slice(1, 3); // show up to 2 extra fields as description
+
+            if (!this._oValueHelpDialog) {
+                this._oValueHelpDialog = new SelectDialog({
+                    confirm: (oEvent) => {
+                        const oSelectedItem = oEvent.getParameter("selectedItem");
+                        const oCtx = oSelectedItem && oSelectedItem.getBindingContext("vh");
+                        if (oCtx && this._fnValueHelpConfirm) {
+                            this._fnValueHelpConfirm(oCtx.getObject());
+                        }
+                    },
+                    search: (oEvent) => {
+                        const sValue = oEvent.getParameter("value");
+                        const oBinding = this._oValueHelpDialog.getBinding("items");
+                        if (!oBinding) {
+                            return;
+                        }
+                        oBinding.filter(sValue ? [
+                            new Filter({
+                                filters: this._aValueHelpKeys.map((k) => new Filter(k, FilterOperator.Contains, sValue)),
+                                and: false
+                            })
+                        ] : []);
+                    }
+                });
+                this.getView().addDependent(this._oValueHelpDialog);
+            }
+
+            this._aValueHelpKeys = aKeys;
+            this._fnValueHelpConfirm = fnOnConfirm;
+
+            this._oValueHelpDialog.setTitle(sTitle);
+            this._oValueHelpDialog.setModel(new JSONModel(aList), "vh");
+            this._oValueHelpDialog.unbindAggregation("items");
+            this._oValueHelpDialog.bindAggregation("items", {
+                path: "vh>/",
+                template: new StandardListItem({
+                    title: "{vh>" + sKeyField + "}",
+                    description: aDescFields.map((f) => "{vh>" + f + "}").join(" - ")
+                })
+            });
+            this._oValueHelpDialog.open();
         }
 
     });
