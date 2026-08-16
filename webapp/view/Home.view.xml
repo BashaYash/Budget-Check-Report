@@ -22,7 +22,6 @@
                     <Label text="Company Code" />
                     <Input
                         id="companyCodeInput"
-                        value="3120"
                         placeholder="Company Code"
                         width="180px"
                         showValueHelp="true"
@@ -33,7 +32,6 @@
                     <Label text="Cost Center" />
                     <Input
                         id="costCenterInput"
-                        value="312006001"
                         placeholder="Cost Center"
                         width="180px" />
                 </VBox>
@@ -42,7 +40,6 @@
                     <Label text="Plant" />
                     <Input
                         id="plantInput"
-                        value="PC01"
                         placeholder="Plant"
                         width="180px"
                         showValueHelp="true"
@@ -53,7 +50,6 @@
                     <Label text="Department" />
                     <Input
                         id="departmentInput"
-                        value="007PC01"
                         placeholder="Department"
                         width="180px"
                         showValueHelp="true"
