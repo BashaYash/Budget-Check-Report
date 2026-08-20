@@ -20,30 +20,22 @@
 
                 <VBox class="sapUiSmallMarginEnd">
                     <Label text="Company Code" />
-                    <Input
+                    <MultiInput
                         id="companyCodeInput"
                         placeholder="Company Code"
-                        width="180px"
+                        width="260px"
                         showValueHelp="true"
                         valueHelpRequest=".onCompanyCodeValueHelp" />
                 </VBox>
 
                 <VBox class="sapUiSmallMarginEnd">
                     <Label text="Cost Center" />
-                    <Input
+                    <MultiInput
                         id="costCenterInput"
                         placeholder="Cost Center"
-                        width="180px" />
-                </VBox>
-
-                <VBox class="sapUiSmallMarginEnd">
-                    <Label text="Plant" />
-                    <Input
-                        id="plantInput"
-                        placeholder="Plant"
-                        width="180px"
+                        width="260px"
                         showValueHelp="true"
-                        valueHelpRequest=".onPlantValueHelp" />
+                        valueHelpRequest=".onCostCenterValueHelp" />
                 </VBox>
 
                 <VBox class="sapUiSmallMarginEnd">
@@ -64,8 +56,10 @@
 
             </HBox>
 
-            <!-- Pie chart and Bar chart side by side, now RESPONSIVE via
-                 sap.ui.layout. -->
+            <!-- Pie chart and Bar chart side by side, RESPONSIVE via sap.ui.layout.
+                 Both are driven by chartModel>/chartData and /barData, which the
+                 controller now always fills with SUM TOTALS across every selected
+                 Company Code / Cost Center combination - never a single line item. -->
             <l:Grid
                 defaultSpan="L6 M12 S12"
                 width="100%"
@@ -183,24 +177,27 @@
 
             <!-- Cross-tab line items table: categories run across as columns, every
                  row is one actual line item exactly as returned by the service (not
-                 summed). Structured as ONE horizontal ScrollContainer holding a
-                 fixed-width VBox, which itself contains:
+                 summed), now labelled with its Company Code / Cost Center since a
+                 result set can span several combinations. Structured as ONE
+                 horizontal ScrollContainer holding a fixed-width VBox, which itself
+                 contains:
                    1) an inner vertical-only ScrollContainer with the scrollable
                       line-item rows (no Total row in here)
-                   2) a second, un-scrolled Table showing only the Total row -->
+                   2) a second, un-scrolled Table showing only the Total row, whose
+                      sums are the same sums used for the Pie/Bar charts above -->
             <VBox class="sapUiMediumMargin" visible="{chartModel>/hasData}">
                 <Title text="All Line Items" class="sapUiSmallMarginBottom"/>
 
                 <ScrollContainer horizontal="true" vertical="false" width="100%">
-                    <VBox width="1530px">
+                    <VBox width="1610px">
 
-                        <ScrollContainer horizontal="false" vertical="true" height="430px" width="1530px">
+                        <ScrollContainer horizontal="false" vertical="true" height="320px" width="1610px">
                             <Table
                                 items="{chartModel>/tableRows}"
                                 mode="None"
-                                width="1530px">
+                                width="1610px">
                                 <columns>
-                                    <Column width="100px"><Text text="Line Item"/></Column>
+                                    <Column width="180px"><Text text="Line Item"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="CC Budget"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="IO Budget"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="Available Budget"/></Column>
@@ -237,14 +234,15 @@
                         <!-- Pinned Total row - its own Table with blank column
                              headers (so it looks like one continuous table),
                              columns/widths identical to the table above so
-                             everything lines up underneath it. -->
+                             everything lines up underneath it. These sums are the
+                             exact same sums the Pie and Bar charts above use. -->
                         <Table
                             items="{chartModel>/totalRows}"
                             mode="None"
-                            width="1530px"
+                            width="1610px"
                             class="totalsTable">
                             <columns>
-                                <Column width="100px"><Text text=""/></Column>
+                                <Column width="180px"><Text text=""/></Column>
                                 <Column width="130px" hAlign="End"><Text text=""/></Column>
                                 <Column width="130px" hAlign="End"><Text text=""/></Column>
                                 <Column width="130px" hAlign="End"><Text text=""/></Column>

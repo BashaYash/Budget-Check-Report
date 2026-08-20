@@ -9,26 +9,24 @@ sap.ui.define([
     "sap/m/VBox",
     "sap/m/ObjectStatus",
     "sap/m/SelectDialog",
-    "sap/m/StandardListItem"
-], (Controller, JSONModel, Filter, FilterOperator, MessageToast, MessageBox, Popover, VBox, ObjectStatus, SelectDialog, StandardListItem) => {
+    "sap/m/StandardListItem",
+    "sap/m/Token"
+], (Controller, JSONModel, Filter, FilterOperator, MessageToast, MessageBox, Popover, VBox, ObjectStatus, SelectDialog, StandardListItem, Token) => {
     "use strict";
 
-    // Single source of truth for every budget field: which OData property it reads
-    // from, its display label, whether it's a header figure (same value on every
-    // row) or a line item (varies per row), and the color used consistently
-    // across the pie, legend, and bar.
+    // legend, and bar.
     const TABLE_FIELDS = [
-        { key: "ccBudget",          label: "CC Budget",              sourceField: "CcBudget",             isHeader: true,  color: "#4EA7F2" },
-        { key: "ioBudget",          label: "IO Budget",              sourceField: "IoBudget",             isHeader: true,  color: "#E07B00" },
-        { key: "availableBudget",   label: "Available Budget",       sourceField: "AvailableBuget",       isHeader: true,  color: "#7CB92C" },
-        { key: "prCommitStock",     label: "PR Commit (Stock)",      sourceField: "PrCommitStockItem",    isHeader: false, color: "#8B5CF6" },
-        { key: "prAsset",           label: "PR Asset",               sourceField: "PrAsset",              isHeader: false, color: "#17A398" },
-        { key: "prCommitNonStock",  label: "PR Commit (Non-Stock)",  sourceField: "PrCommNonStockItem",   isHeader: false, color: "#2B6FDE" },
-        { key: "poNonStock",        label: "PO (Non-Stock)",         sourceField: "TotalPONonStockItem",  isHeader: false, color: "#D6249F" },
-        { key: "poStock",           label: "PO (Stock)",             sourceField: "TotalPoStockItem",     isHeader: false, color: "#6B7280" },
-        { key: "poAsset",           label: "PO Asset",               sourceField: "PoAsset",              isHeader: false, color: "#E06666" },
-        { key: "actualConsumption", label: "Actual Consumption",     sourceField: "ActualConsumption",    isHeader: false, color: "#6F63E0" },
-        { key: "ioConsumption",     label: "IO Consumption",         sourceField: "IoConsump",            isHeader: false, color: "#1E3A8A" }
+        { key: "ccBudget", label: "CC Budget", sourceField: "CcBudget", isHeader: true, color: "#4EA7F2" },
+        { key: "ioBudget", label: "IO Budget", sourceField: "IoBudget", isHeader: true, color: "#E07B00" },
+        { key: "availableBudget", label: "Available Budget", sourceField: "AvailableBuget", isHeader: true, color: "#7CB92C" },
+        { key: "prCommitStock", label: "PR Commit (Stock)", sourceField: "PrCommitStockItem", isHeader: false, color: "#8B5CF6" },
+        { key: "prAsset", label: "PR Asset", sourceField: "PrAsset", isHeader: false, color: "#17A398" },
+        { key: "prCommitNonStock", label: "PR Commit (Non-Stock)", sourceField: "PrCommNonStockItem", isHeader: false, color: "#2B6FDE" },
+        { key: "poNonStock", label: "PO (Non-Stock)", sourceField: "TotalPONonStockItem", isHeader: false, color: "#D6249F" },
+        { key: "poStock", label: "PO (Stock)", sourceField: "TotalPoStockItem", isHeader: false, color: "#6B7280" },
+        { key: "poAsset", label: "PO Asset", sourceField: "PoAsset", isHeader: false, color: "#E06666" },
+        { key: "actualConsumption", label: "Actual Consumption", sourceField: "ActualConsumption", isHeader: false, color: "#6F63E0" },
+        { key: "ioConsumption", label: "IO Consumption", sourceField: "IoConsump", isHeader: false, color: "#1E3A8A" }
     ];
 
     return Controller.extend("com.onex.budgetcheck.controller.Home", {
@@ -48,24 +46,28 @@ sap.ui.define([
         onSubmit() {
             const oView = this.getView();
 
-            const sCompanyCode = oView.byId("companyCodeInput").getValue().trim();
-            const sCostCenter  = oView.byId("costCenterInput").getValue().trim();
-            const sPlant       = oView.byId("plantInput").getValue().trim();
-            const sDepartment  = oView.byId("departmentInput").getValue().trim();
+            const aCompanyCodes = this._getMultiInputValues(oView.byId("companyCodeInput"));
+            const aCostCenters = this._getMultiInputValues(oView.byId("costCenterInput"));
+            const sDepartment = oView.byId("departmentInput").getValue().trim();
 
-            if (!sCompanyCode || !sCostCenter || !sPlant || !sDepartment) {
-                MessageToast.show("Please fill in all fields.");
+            if (!aCompanyCodes.length || !aCostCenters.length) {
+                MessageToast.show("Please select at least one Company Code and at least one Cost Center.");
                 return;
             }
 
-            const sFilter = "(CompanyCode eq '" + sCompanyCode + "')" +
-                            " and (Plant eq '" + sPlant + "')" +
-                            " and (CostCenter eq '" + sCostCenter + "')" +
-                            " and (Department eq '" + sDepartment + "')";
+            const sCompanyFilter = this._buildOrFilter("CompanyCode", aCompanyCodes);
+            const sCostCenterFilter = this._buildOrFilter("CostCenter", aCostCenters);
+
+            const aFilterParts = [sCompanyFilter, sCostCenterFilter];
+            if (sDepartment) {
+                aFilterParts.push("(Department eq '" + this._escapeODataString(sDepartment) + "')");
+            }
+
+            const sFilter = aFilterParts.join(" and ");
 
             const sUrl = this._getServiceUrl() + "BudgetCheckSet" +
-                         "?$filter=" + encodeURIComponent(sFilter) +
-                         "&$format=json";
+                "?$filter=" + encodeURIComponent(sFilter) +
+                "&$format=json";
 
             oView.setBusy(true);
 
@@ -98,55 +100,82 @@ sap.ui.define([
             return this.getOwnerComponent().getManifestEntry("/sap.app/dataSources/mainService/uri");
         },
 
+        // Reads the tokens off a MultiInput and returns their key (falling back to
+        // the token text if no key was set)
+        _getMultiInputValues(oMultiInput) {
+            return oMultiInput.getTokens().map((oToken) => oToken.getKey() || oToken.getText());
+        },
+
+        // Builds an OData OR-group for one field, e.g.
+        // (CompanyCode eq '3120' or CompanyCode eq '2000')
+        _buildOrFilter(sField, aValues) {
+            return "(" + aValues.map((sValue) => sField + " eq '" + this._escapeODataString(sValue) + "'").join(" or ") + ")";
+        },
+
+        _escapeODataString(sValue) {
+            return String(sValue).replace(/'/g, "''");
+        },
+
         _updateChart(aResults) {
             this._aLastResults = aResults;
-            const oFirst = aResults[0];
-            const fTotalBudget = parseFloat(oFirst.TotalBudget) || 0;
+
+
+            const oHeaderGroupsSeen = {};
+            const aHeaderGroups = [];
+            aResults.forEach((oRow) => {
+                const sGroupKey = (oRow.CompanyCode || "") + "|" + (oRow.CostCenter || "");
+                if (!oHeaderGroupsSeen[sGroupKey]) {
+                    oHeaderGroupsSeen[sGroupKey] = true;
+                    aHeaderGroups.push(oRow);
+                }
+            });
+
+            const fTotalBudget = aHeaderGroups.reduce((fSum, oRow) => fSum + (parseFloat(oRow.TotalBudget) || 0), 0);
 
             const aTableRows = aResults.map((oRow, iIndex) => {
-                const oRowData = { rowLabel: "Line " + (iIndex + 1), isTotal: false };
+                const oRowData = {
+                    rowLabel: (oRow.CompanyCode || "") + " / " + (oRow.CostCenter || "") + " - Line " + (iIndex + 1),
+                    isTotal: false
+                };
                 TABLE_FIELDS.forEach((oField) => {
                     oRowData[oField.key] = parseFloat(oRow[oField.sourceField]) || 0;
                 });
                 return oRowData;
             });
 
-            // Chart totals
-            const oChartColumnSums = {};
+            // Column sums - this is the SINGLE source used for the Total table row
+            // AND for the Pie / Bar charts, so the charts always reflect the sum
+            // total across every selected Company Code / Cost Center, never just
+            // one line item.
+            const oColumnSums = {};
             TABLE_FIELDS.forEach((oField) => {
-                oChartColumnSums[oField.key] = oField.isHeader
-                    ? (parseFloat(oFirst[oField.sourceField]) || 0)
+                oColumnSums[oField.key] = oField.isHeader
+                    ? aHeaderGroups.reduce((fSum, oRow) => fSum + (parseFloat(oRow[oField.sourceField]) || 0), 0)
                     : aTableRows.reduce((fSum, oRow) => fSum + oRow[oField.key], 0);
             });
 
-            // Table Total row: every column summed across all line items,
-            // including the header columns, per request.
-            const oTotalRowSums = {};
-            TABLE_FIELDS.forEach((oField) => {
-                oTotalRowSums[oField.key] = aTableRows.reduce((fSum, oRow) => fSum + oRow[oField.key], 0);
-            });
-            const oTotalRow = Object.assign({ rowLabel: "Total", isTotal: true }, oTotalRowSums);
+            const oTotalRow = Object.assign({ rowLabel: "Total", isTotal: true }, oColumnSums);
 
             // Combined categories for the Pie / Bar / custom legend - one
-            // slice/bar per field, using the chart column sums computed above.
+            // slice/bar per field, always driven by the Total row sums above.
             const aChartData = TABLE_FIELDS.map((oField) => ({
                 Category: oField.label,
-                Value: oChartColumnSums[oField.key],
+                Value: oColumnSums[oField.key],
                 Color: oField.color
             }));
 
             this.getView().getModel("chartModel").setData({
-                chartData: aChartData,           // feeds the pie + custom legend
-                barData: aChartData,             // feeds the bar - same data, shown side by side
+                chartData: aChartData,           // feeds the pie + custom legend (sum totals)
+                barData: aChartData,             // feeds the bar - same sum totals, shown side by side
                 tableRows: aTableRows,           // feeds the scrolling body: one row per line item
                 totalRows: [oTotalRow],          // feeds the pinned Total row table
                 hasData: true,
                 summary: {
                     totalBudget: fTotalBudget,
-                    availableBudget: oChartColumnSums.availableBudget,
-                    currency: oFirst.Currency,
-                    costCenter: oFirst.CostCenter + " – " + oFirst.CostCenter_Text,
-                    company: oFirst.CompanyCode + " – " + oFirst.CompanyName
+                    availableBudget: oColumnSums.availableBudget,
+                    currency: aHeaderGroups[0].Currency,
+                    costCenter: aHeaderGroups.map((oRow) => oRow.CostCenter).join(", "),
+                    company: aHeaderGroups.map((oRow) => oRow.CompanyCode).join(", ")
                 }
             });
         },
@@ -241,54 +270,57 @@ sap.ui.define([
         },
 
 
-        // F4 value help - Company Code -> Plant (filtered by Company Code)
-        // -> Department (filtered by Plant). Cost Center will follow later.
+        // F4 value help - Company Code and Cost Center are multi-select (tokens).
+        // Cost Center's list is narrowed by whichever Company Code(s) are
+        // selected. Department is single-select and unfiltered (see below).
 
         onCompanyCodeValueHelp() {
             const sUrl = this._getServiceUrl() + "CompanyCodeSHSet";
-            this._openValueHelpDialog("Company Code", sUrl, (oSelected) => {
-                const aKeys = Object.keys(oSelected).filter((k) => k !== "__metadata");
-                const sKeyField = aKeys.find((k) => k.toLowerCase() === "companycode") || aKeys[0];
-                this.byId("companyCodeInput").setValue(oSelected[sKeyField]);
-                // Company Code changed - clear the fields that depend on it
-                this.byId("plantInput").setValue("");
-                this.byId("departmentInput").setValue("");
+            this._openValueHelpDialog("Company Code", sUrl, true, (aSelectedRows) => {
+                this._addTokensToMultiInput(this.byId("companyCodeInput"), aSelectedRows, "CompanyCode");
             });
         },
 
-        onPlantValueHelp() {
-            const sCompanyCode = this.byId("companyCodeInput").getValue().trim();
-            if (!sCompanyCode) {
-                MessageToast.show("Please select a Company Code first.");
-                return;
+        onCostCenterValueHelp() {
+            const aCompanyCodes = this._getMultiInputValues(this.byId("companyCodeInput"));
+            // The Cost Center search help entity is BudgetCostcenterSHSet, and
+            // unlike BudgetCheckSet its Company Code field is "Companycode"
+            // (lowercase c), not "CompanyCode" - confirmed via Gateway Client.
+            let sUrl = this._getServiceUrl() + "BudgetCostcenterSHSet";
+            if (aCompanyCodes.length) {
+                sUrl += "?$filter=" + encodeURIComponent(this._buildOrFilter("Companycode", aCompanyCodes));
             }
-            const sUrl = this._getServiceUrl() + "PlantSHSet(CompanyCode='" + sCompanyCode + "')";
-            this._openValueHelpDialog("Plant", sUrl, (oSelected) => {
-                const aKeys = Object.keys(oSelected).filter((k) => k !== "__metadata");
-                const sKeyField = aKeys.find((k) => k.toLowerCase().indexOf("plant") > -1) || aKeys[0];
-                this.byId("plantInput").setValue(oSelected[sKeyField]);
-                // Plant changed - clear Department, which depends on it
-                this.byId("departmentInput").setValue("");
+            this._openValueHelpDialog("Cost Center", sUrl, true, (aSelectedRows) => {
+                // "Costcenter" (lowercase c) is this entity's field name too.
+                this._addTokensToMultiInput(this.byId("costCenterInput"), aSelectedRows, "Costcenter");
             });
         },
 
         onDepartmentValueHelp() {
-            const sPlant = this.byId("plantInput").getValue().trim();
-            if (!sPlant) {
-                MessageToast.show("Please select a Plant first.");
-                return;
-            }
-            const sUrl = this._getServiceUrl() + "DepartmentSHSet(Plant='" + sPlant + "')";
-            this._openValueHelpDialog("Department", sUrl, (oSelected) => {
-                const aKeys = Object.keys(oSelected).filter((k) => k !== "__metadata");
-                const sKeyField = aKeys.find((k) => k.toLowerCase().indexOf("department") > -1) || aKeys[0];
-                this.byId("departmentInput").setValue(oSelected[sKeyField]);
+            const sUrl = this._getServiceUrl() + "DepartmentSHSet";
+            this._openValueHelpDialog("Department", sUrl, false, (oSelectedRow) => {
+                const aKeys = Object.keys(oSelectedRow).filter((k) => k !== "__metadata");
+                const sKeyField = aKeys.find((k) => k.toLowerCase() === "departmentid") || aKeys[0];
+                this.byId("departmentInput").setValue(oSelectedRow[sKeyField]);
             });
         },
 
-        // Generic F4 help: reads sUrl, shows the results in a searchable
-        // SelectDialog, and calls fnOnConfirm(oSelectedRow) when the user picks one
-        _openValueHelpDialog(sTitle, sUrl, fnOnConfirm) {
+        // Turns confirmed SelectDialog rows into Tokens on a MultiInput,
+        // skipping any value that's already present as a token.
+        _addTokensToMultiInput(oMultiInput, aSelectedRows, sPreferredKeyField) {
+            aSelectedRows.forEach((oRow) => {
+                const aKeys = Object.keys(oRow).filter((k) => k !== "__metadata");
+                const sKeyField = aKeys.find((k) => k.toLowerCase() === sPreferredKeyField.toLowerCase()) || aKeys[0];
+                const sValue = oRow[sKeyField];
+
+                const bExists = oMultiInput.getTokens().some((oToken) => oToken.getKey() === sValue);
+                if (!bExists) {
+                    oMultiInput.addToken(new Token({ key: sValue, text: sValue }));
+                }
+            });
+        },
+
+        _openValueHelpDialog(sTitle, sUrl, bMultiSelect, fnOnConfirm) {
             const sReadUrl = sUrl + (sUrl.indexOf("?") > -1 ? "&" : "?") + "$format=json";
 
             this.getView().setBusy(true);
@@ -319,7 +351,7 @@ sap.ui.define([
                         return;
                     }
 
-                    this._showSelectDialog(sTitle, aList, fnOnConfirm);
+                    this._showSelectDialog(sTitle, aList, bMultiSelect, fnOnConfirm);
                 },
                 error: () => {
                     this.getView().setBusy(false);
@@ -328,23 +360,32 @@ sap.ui.define([
             });
         },
 
-        _showSelectDialog(sTitle, aList, fnOnConfirm) {
+        _showSelectDialog(sTitle, aList, bMultiSelect, fnOnConfirm) {
             const aKeys = Object.keys(aList[0]).filter((k) => k !== "__metadata");
             const sKeyField = aKeys[0];
             const aDescFields = aKeys.slice(1, 3); // show up to 2 extra fields as description
 
-            if (!this._oValueHelpDialog) {
-                this._oValueHelpDialog = new SelectDialog({
+            // Multi-select and single-select need different `multiSelect` settings
+            const sDialogRef = bMultiSelect ? "_oValueHelpDialogMulti" : "_oValueHelpDialogSingle";
+
+            if (!this[sDialogRef]) {
+                this[sDialogRef] = new SelectDialog({
+                    multiSelect: bMultiSelect,
                     confirm: (oEvent) => {
-                        const oSelectedItem = oEvent.getParameter("selectedItem");
-                        const oCtx = oSelectedItem && oSelectedItem.getBindingContext("vh");
-                        if (oCtx && this._fnValueHelpConfirm) {
-                            this._fnValueHelpConfirm(oCtx.getObject());
+                        if (bMultiSelect) {
+                            const aSelectedContexts = oEvent.getParameter("selectedContexts") || [];
+                            this._fnValueHelpConfirm(aSelectedContexts.map((oCtx) => oCtx.getObject()));
+                        } else {
+                            const oSelectedItem = oEvent.getParameter("selectedItem");
+                            const oCtx = oSelectedItem && oSelectedItem.getBindingContext("vh");
+                            if (oCtx) {
+                                this._fnValueHelpConfirm(oCtx.getObject());
+                            }
                         }
                     },
                     search: (oEvent) => {
                         const sValue = oEvent.getParameter("value");
-                        const oBinding = this._oValueHelpDialog.getBinding("items");
+                        const oBinding = this[sDialogRef].getBinding("items");
                         if (!oBinding) {
                             return;
                         }
@@ -356,23 +397,23 @@ sap.ui.define([
                         ] : []);
                     }
                 });
-                this.getView().addDependent(this._oValueHelpDialog);
+                this.getView().addDependent(this[sDialogRef]);
             }
 
             this._aValueHelpKeys = aKeys;
             this._fnValueHelpConfirm = fnOnConfirm;
 
-            this._oValueHelpDialog.setTitle(sTitle);
-            this._oValueHelpDialog.setModel(new JSONModel(aList), "vh");
-            this._oValueHelpDialog.unbindAggregation("items");
-            this._oValueHelpDialog.bindAggregation("items", {
+            this[sDialogRef].setTitle(sTitle);
+            this[sDialogRef].setModel(new JSONModel(aList), "vh");
+            this[sDialogRef].unbindAggregation("items");
+            this[sDialogRef].bindAggregation("items", {
                 path: "vh>/",
                 template: new StandardListItem({
                     title: "{vh>" + sKeyField + "}",
                     description: aDescFields.map((f) => "{vh>" + f + "}").join(" - ")
                 })
             });
-            this._oValueHelpDialog.open();
+            this[sDialogRef].open();
         }
 
     });
