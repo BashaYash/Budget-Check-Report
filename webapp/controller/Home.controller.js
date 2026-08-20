@@ -14,19 +14,27 @@ sap.ui.define([
 ], (Controller, JSONModel, Filter, FilterOperator, MessageToast, MessageBox, Popover, VBox, ObjectStatus, SelectDialog, StandardListItem, Token) => {
     "use strict";
 
-    // legend, and bar.
+    // Single source of truth for every table/chart column: which OData property it
+    // reads from, its display label and order, and its type:
     const TABLE_FIELDS = [
-        { key: "ccBudget", label: "CC Budget", sourceField: "CcBudget", isHeader: true, color: "#4EA7F2" },
-        { key: "ioBudget", label: "IO Budget", sourceField: "IoBudget", isHeader: true, color: "#E07B00" },
-        { key: "availableBudget", label: "Available Budget", sourceField: "AvailableBuget", isHeader: true, color: "#7CB92C" },
-        { key: "prCommitStock", label: "PR Commit (Stock)", sourceField: "PrCommitStockItem", isHeader: false, color: "#8B5CF6" },
-        { key: "prAsset", label: "PR Asset", sourceField: "PrAsset", isHeader: false, color: "#17A398" },
-        { key: "prCommitNonStock", label: "PR Commit (Non-Stock)", sourceField: "PrCommNonStockItem", isHeader: false, color: "#2B6FDE" },
-        { key: "poNonStock", label: "PO (Non-Stock)", sourceField: "TotalPONonStockItem", isHeader: false, color: "#D6249F" },
-        { key: "poStock", label: "PO (Stock)", sourceField: "TotalPoStockItem", isHeader: false, color: "#6B7280" },
-        { key: "poAsset", label: "PO Asset", sourceField: "PoAsset", isHeader: false, color: "#E06666" },
-        { key: "actualConsumption", label: "Actual Consumption", sourceField: "ActualConsumption", isHeader: false, color: "#6F63E0" },
-        { key: "ioConsumption", label: "IO Consumption", sourceField: "IoConsump", isHeader: false, color: "#1E3A8A" }
+        { key: "costCenter", label: "Cost Center", sourceField: "CostCenter", type: "text" },
+        { key: "costCenterText", label: "Cost Center Description", sourceField: "CostCenter_Text", type: "text" },
+        { key: "companyCode", label: "Company Code", sourceField: "CompanyCode", type: "text" },
+        { key: "companyName", label: "Company Code Description", sourceField: "CompanyName", type: "text" },
+        { key: "department", label: "Department Code", sourceField: "Department", type: "text" },
+        { key: "currency", label: "Currency", sourceField: "Currency", type: "text" },
+        { key: "availableBudget", label: "Available Budget", sourceField: "AvailableBuget", type: "header", color: "#7CB92C" },
+        { key: "totalApprovedBudget", label: "Total Approved Budget", sourceField: "TotalBudget", type: "header", color: "#4EA7F2" },
+        { key: "ccBudget", label: "C.C Budget", sourceField: "CcBudget", type: "header", color: "#E07B00" },
+        { key: "ioBudget", label: "IO Budget", sourceField: "IoBudget", type: "header", color: "#8B5CF6" },
+        { key: "prCommitStock", label: "PR Commitment Stock Item", sourceField: "PrCommitStockItem", type: "line", color: "#17A398" },
+        { key: "prAsset", label: "PR Asset", sourceField: "PrAsset", type: "line", color: "#2B6FDE" },
+        { key: "prCommitNonStock", label: "PR Commitment Non Stock Item", sourceField: "PrCommNonStockItem", type: "line", color: "#D6249F" },
+        { key: "poNonStock", label: "Total PO Non stock Item", sourceField: "TotalPONonStockItem", type: "line", color: "#6B7280" },
+        { key: "poStock", label: "Total PO stock Item", sourceField: "TotalPoStockItem", type: "line", color: "#E06666" },
+        { key: "poAsset", label: "PO Asset", sourceField: "PoAsset", type: "line", color: "#6F63E0" },
+        { key: "actualConsumption", label: "Actual Consumption", sourceField: "ActualConsumption", type: "line", color: "#1E3A8A" },
+        { key: "ioConsumption", label: "IO Consumption", sourceField: "IoConsump", type: "line", color: "#B45309" }
     ];
 
     return Controller.extend("com.onex.budgetcheck.controller.Home", {
@@ -58,6 +66,7 @@ sap.ui.define([
             const sCompanyFilter = this._buildOrFilter("CompanyCode", aCompanyCodes);
             const sCostCenterFilter = this._buildOrFilter("CostCenter", aCostCenters);
 
+            // Department is optional - only add its clause when the user entered one.
             const aFilterParts = [sCompanyFilter, sCostCenterFilter];
             if (sDepartment) {
                 aFilterParts.push("(Department eq '" + this._escapeODataString(sDepartment) + "')");
@@ -119,7 +128,9 @@ sap.ui.define([
         _updateChart(aResults) {
             this._aLastResults = aResults;
 
-
+            // See the "header" type note above TABLE_FIELDS: header figures repeat
+            // per row within a CompanyCode+CostCenter group, so they're summed once
+            // per unique group here, not once per row.
             const oHeaderGroupsSeen = {};
             const aHeaderGroups = [];
             aResults.forEach((oRow) => {
@@ -130,35 +141,48 @@ sap.ui.define([
                 }
             });
 
-            const fTotalBudget = aHeaderGroups.reduce((fSum, oRow) => fSum + (parseFloat(oRow.TotalBudget) || 0), 0);
-
-            const aTableRows = aResults.map((oRow, iIndex) => {
-                const oRowData = {
-                    rowLabel: (oRow.CompanyCode || "") + " / " + (oRow.CostCenter || "") + " - Line " + (iIndex + 1),
-                    isTotal: false
-                };
+            // One row per PR/PO line item, exactly as returned by the service -
+            // every column (Cost Center, descriptions, budgets, consumption, ...)
+            // comes straight from OData.
+            const aTableRows = aResults.map((oRow) => {
+                const oRowData = { isTotal: false };
                 TABLE_FIELDS.forEach((oField) => {
-                    oRowData[oField.key] = parseFloat(oRow[oField.sourceField]) || 0;
+                    oRowData[oField.key] = oField.type === "text"
+                        ? (oRow[oField.sourceField] || "")
+                        : (parseFloat(oRow[oField.sourceField]) || 0);
                 });
                 return oRowData;
             });
 
-            // Column sums - this is the SINGLE source used for the Total table row
-            // AND for the Pie / Bar charts, so the charts always reflect the sum
-            // total across every selected Company Code / Cost Center, never just
-            // one line item.
+            // Column sums - the SINGLE source used for the Total table row AND the
+            // Pie / Bar charts, so the charts always reflect true totals across
+            // every selected Company Code / Cost Center, never just one line item.
             const oColumnSums = {};
             TABLE_FIELDS.forEach((oField) => {
-                oColumnSums[oField.key] = oField.isHeader
+                if (oField.type === "text") {
+                    return;
+                }
+                oColumnSums[oField.key] = oField.type === "header"
                     ? aHeaderGroups.reduce((fSum, oRow) => fSum + (parseFloat(oRow[oField.sourceField]) || 0), 0)
                     : aTableRows.reduce((fSum, oRow) => fSum + oRow[oField.key], 0);
             });
 
-            const oTotalRow = Object.assign({ rowLabel: "Total", isTotal: true }, oColumnSums);
+            // Total row: identity (text) columns can't be meaningfully summed once
+            // several Cost Centers/Company Codes are in the result set, so they
+            // stay blank - the first column just carries the word "Total".
+            const oTotalRow = { isTotal: true };
+            TABLE_FIELDS.forEach((oField, iIndex) => {
+                if (oField.type === "text") {
+                    oTotalRow[oField.key] = iIndex === 0 ? "Total" : "";
+                } else {
+                    oTotalRow[oField.key] = oColumnSums[oField.key];
+                }
+            });
 
-            // Combined categories for the Pie / Bar / custom legend - one
-            // slice/bar per field, always driven by the Total row sums above.
-            const aChartData = TABLE_FIELDS.map((oField) => ({
+            // Combined categories for the Pie / Bar / custom legend - one slice/bar
+            // per amount field (identity columns excluded), always driven by the
+            // Total row sums above.
+            const aChartData = TABLE_FIELDS.filter((oField) => oField.type !== "text").map((oField) => ({
                 Category: oField.label,
                 Value: oColumnSums[oField.key],
                 Color: oField.color
@@ -171,7 +195,7 @@ sap.ui.define([
                 totalRows: [oTotalRow],          // feeds the pinned Total row table
                 hasData: true,
                 summary: {
-                    totalBudget: fTotalBudget,
+                    totalBudget: oColumnSums.totalApprovedBudget,
                     availableBudget: oColumnSums.availableBudget,
                     currency: aHeaderGroups[0].Currency,
                     costCenter: aHeaderGroups.map((oRow) => oRow.CostCenter).join(", "),
@@ -293,10 +317,22 @@ sap.ui.define([
             this._openValueHelpDialog("Cost Center", sUrl, true, (aSelectedRows) => {
                 // "Costcenter" (lowercase c) is this entity's field name too.
                 this._addTokensToMultiInput(this.byId("costCenterInput"), aSelectedRows, "Costcenter");
+            }, {
+                // Per request: the dialog list highlights "Budget Cost Center"
+                // (Budgetcarryingcostcenter) as the title, with its name
+                // (Budgetcostcentername) as the description underneath. This only
+                // changes what's *shown* in the picker - the value actually
+                // stored as a token/used in the filter is still "Costcenter".
+                titleField: "Budgetcarryingcostcenter",
+                descriptionFields: ["Budgetcostcentername"]
             });
         },
 
         onDepartmentValueHelp() {
+            // DepartmentSHSet has no Company Code field at all - confirmed via
+            // Gateway Client, its fields are Departmentid / Departmentname /
+            // Plant / Plantname. With Plant removed from the UI there's nothing
+            // left to filter it by, so it's loaded unfiltered.
             const sUrl = this._getServiceUrl() + "DepartmentSHSet";
             this._openValueHelpDialog("Department", sUrl, false, (oSelectedRow) => {
                 const aKeys = Object.keys(oSelectedRow).filter((k) => k !== "__metadata");
@@ -320,7 +356,9 @@ sap.ui.define([
             });
         },
 
-        _openValueHelpDialog(sTitle, sUrl, bMultiSelect, fnOnConfirm) {
+        // Generic F4 help: reads sUrl, shows the results in a searchable
+        // SelectDialog (single or multi select), and calls fnOnConfirm with either
+        _openValueHelpDialog(sTitle, sUrl, bMultiSelect, fnOnConfirm, oDisplayFields) {
             const sReadUrl = sUrl + (sUrl.indexOf("?") > -1 ? "&" : "?") + "$format=json";
 
             this.getView().setBusy(true);
@@ -351,7 +389,7 @@ sap.ui.define([
                         return;
                     }
 
-                    this._showSelectDialog(sTitle, aList, bMultiSelect, fnOnConfirm);
+                    this._showSelectDialog(sTitle, aList, bMultiSelect, fnOnConfirm, oDisplayFields);
                 },
                 error: () => {
                     this.getView().setBusy(false);
@@ -360,12 +398,14 @@ sap.ui.define([
             });
         },
 
-        _showSelectDialog(sTitle, aList, bMultiSelect, fnOnConfirm) {
+        _showSelectDialog(sTitle, aList, bMultiSelect, fnOnConfirm, oDisplayFields) {
             const aKeys = Object.keys(aList[0]).filter((k) => k !== "__metadata");
-            const sKeyField = aKeys[0];
-            const aDescFields = aKeys.slice(1, 3); // show up to 2 extra fields as description
+            const sKeyField = (oDisplayFields && oDisplayFields.titleField) || aKeys[0];
+            const aDescFields = (oDisplayFields && oDisplayFields.descriptionFields) || aKeys.slice(1, 3);
 
             // Multi-select and single-select need different `multiSelect` settings
+            // and different confirm-event handling, so two dialog instances are
+            // kept (one per mode) rather than reconfiguring one dialog on the fly.
             const sDialogRef = bMultiSelect ? "_oValueHelpDialogMulti" : "_oValueHelpDialogSingle";
 
             if (!this[sDialogRef]) {

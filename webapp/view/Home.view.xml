@@ -39,7 +39,7 @@
                 </VBox>
 
                 <VBox class="sapUiSmallMarginEnd">
-                    <Label text="Department" />
+                    <Label text="Department (optional)" />
                     <Input
                         id="departmentInput"
                         placeholder="Department"
@@ -56,10 +56,7 @@
 
             </HBox>
 
-            <!-- Pie chart and Bar chart side by side, RESPONSIVE via sap.ui.layout.
-                 Both are driven by chartModel>/chartData and /barData, which the
-                 controller now always fills with SUM TOTALS across every selected
-                 Company Code / Cost Center combination - never a single line item. -->
+            <!-- Pie chart and Bar chart side by side, RESPONSIVE via sap.ui.layout.-->
             <l:Grid
                 defaultSpan="L6 M12 S12"
                 width="100%"
@@ -71,11 +68,7 @@
                     width="100%"
                     class="sapUiResponsiveMargin sapUiMediumMarginBottom">
                     <!-- Pie chart + a custom clickable/hoverable legend list.
-                         The built-in sap.viz legend doesn't fire a click/hover
-                         event we can hook into, so it's hidden here and replaced
-                         with this List, which uses the exact same colors (defined
-                         once in the controller) and opens the same amount popover
-                         as everything else - now on hover as well as press. -->
+                     now on hover as well as press. -->
                     <HBox wrap="NoWrap" alignItems="Start" width="100%">
                         <viz:VizFrame
                             id="budgetPieChart"
@@ -89,7 +82,7 @@
                                 legend: { visible: false },
                                 plotArea: {
                                     dataLabel: { visible: true, type: 'value', showTotal: false },
-                                    colorPalette: ['#4EA7F2','#E07B00','#7CB92C','#8B5CF6','#17A398','#2B6FDE','#D6249F','#6B7280','#E06666','#6F63E0','#1E3A8A']
+                                    colorPalette: ['#7CB92C','#4EA7F2','#E07B00','#8B5CF6','#17A398','#2B6FDE','#D6249F','#6B7280','#E06666','#6F63E0','#1E3A8A','#B45309']
                                 },
                                 interaction: { selectability: { mode: 'SINGLE' } }
                             }">
@@ -150,7 +143,10 @@
                         selectData="onBarSelect"
                         vizProperties="{
                             title: { visible: false },
-                            plotArea: { dataLabel: { visible: true, type: 'value' } },
+                            plotArea: {
+                                dataLabel: { visible: true, type: 'value' },
+                                colorPalette: ['#7CB92C','#4EA7F2','#E07B00','#8B5CF6','#17A398','#2B6FDE','#D6249F','#6B7280','#E06666','#6F63E0','#1E3A8A','#B45309']
+                            },
                             valueAxis: { title: { visible: true, text: 'Amount' } },
                             categoryAxis: { title: { visible: false } },
                             legend: { visible: true, position: 'bottom', title: { visible: false } },
@@ -175,74 +171,78 @@
 
             </l:Grid>
 
-            <!-- Cross-tab line items table: categories run across as columns, every
-                 row is one actual line item exactly as returned by the service (not
-                 summed), now labelled with its Company Code / Cost Center since a
-                 result set can span several combinations. Structured as ONE
-                 horizontal ScrollContainer holding a fixed-width VBox, which itself
-                 contains:
-                   1) an inner vertical-only ScrollContainer with the scrollable
-                      line-item rows (no Total row in here)
-                   2) a second, un-scrolled Table showing only the Total row, whose
-                      sums are the same sums used for the Pie/Bar charts above -->
+            <!-- Cross-tab line items table: one row per actual line item exactly as
+                 returned by the service (not summed), every column pulled straight
+                 from OData in this fixed sequence: -->
             <VBox class="sapUiMediumMargin" visible="{chartModel>/hasData}">
                 <Title text="All Line Items" class="sapUiSmallMarginBottom"/>
 
                 <ScrollContainer horizontal="true" vertical="false" width="100%">
-                    <VBox width="1610px">
+                    <VBox width="2460px">
 
-                        <ScrollContainer horizontal="false" vertical="true" height="320px" width="1610px">
+                        <ScrollContainer horizontal="false" vertical="true" height="300px" width="2600px">
                             <Table
                                 items="{chartModel>/tableRows}"
                                 mode="None"
-                                width="1610px">
+                                width="2460px"
+                                sticky="ColumnHeaders">
                                 <columns>
-                                    <Column width="180px"><Text text="Line Item"/></Column>
-                                    <Column width="130px" hAlign="End"><Text text="CC Budget"/></Column>
-                                    <Column width="130px" hAlign="End"><Text text="IO Budget"/></Column>
+                                    <Column width="300px"><Text text="Cost Center / Description"/></Column>
+                                    <Column width="300px"><Text text="Company Code / Description"/></Column>
+                                    <Column width="150px"><Text text="Department Code"/></Column>
+                                    <Column width="150px"><Text text="Currency"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="Available Budget"/></Column>
-                                    <Column width="130px" hAlign="End"><Text text="PR Commit (Stock)"/></Column>
+                                    <Column width="130px" hAlign="End"><Text text="Total Approved Budget"/></Column>
+                                    <Column width="130px" hAlign="End"><Text text="C.C Budget"/></Column>
+                                    <Column width="130px" hAlign="End"><Text text="IO Budget"/></Column>
+                                    <Column width="130px" hAlign="End"><Text text="PR Commitment Stock Item"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="PR Asset"/></Column>
-                                    <Column width="130px" hAlign="End"><Text text="PR Commit (Non-Stock)"/></Column>
-                                    <Column width="130px" hAlign="End"><Text text="PO (Non-Stock)"/></Column>
-                                    <Column width="130px" hAlign="End"><Text text="PO (Stock)"/></Column>
+                                    <Column width="130px" hAlign="End"><Text text="PR Commitment Non Stock Item"/></Column>
+                                    <Column width="130px" hAlign="End"><Text text="Total PO Non stock Item"/></Column>
+                                    <Column width="130px" hAlign="End"><Text text="Total PO stock Item"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="PO Asset"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="Actual Consumption"/></Column>
                                     <Column width="130px" hAlign="End"><Text text="IO Consumption"/></Column>
                                 </columns>
                                 <items>
-                                    <ColumnListItem>
-                                        <cells>
-                                            <ObjectStatus text="{chartModel>rowLabel}"/>
-                                            <ObjectNumber number="{path:'chartModel>ccBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>ioBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>availableBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>prCommitStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>prAsset', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>prCommitNonStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>poNonStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>poStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>poAsset', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>actualConsumption', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                            <ObjectNumber number="{path:'chartModel>ioConsumption', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                        </cells>
-                                    </ColumnListItem>
-                                </items>
+                                <ColumnListItem>
+                                    <cells>
+                                        <Text text="{chartModel>costCenter} - {chartModel>costCenterText}"/>
+                                        <Text text="{chartModel>companyCode} - {chartModel>companyName}"/>
+                                        <Text text="{chartModel>department}"/>
+                                        <Text text="{chartModel>currency}"/>
+                                        <Text text="{path:'chartModel>availableBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>totalApprovedBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>ccBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>ioBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>prCommitStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>prAsset', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>prCommitNonStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>poNonStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>poStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>poAsset', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>actualConsumption', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <Text text="{path:'chartModel>ioConsumption', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                    </cells>
+                                </ColumnListItem>
+                            </items>
                             </Table>
                         </ScrollContainer>
 
-                        <!-- Pinned Total row - its own Table with blank column
-                             headers (so it looks like one continuous table),
-                             columns/widths identical to the table above so
-                             everything lines up underneath it. These sums are the
-                             exact same sums the Pie and Bar charts above use. -->
+                        <!-- Pinned Total row -->
                         <Table
                             items="{chartModel>/totalRows}"
                             mode="None"
-                            width="1610px"
+                            width="2460px"
                             class="totalsTable">
                             <columns>
-                                <Column width="180px"><Text text=""/></Column>
+                                <Column width="300px"><Text text=""/></Column>
+                                <Column width="300px"><Text text=""/></Column>
+                                <Column width="150px"><Text text=""/></Column>
+                                <Column width="150px"><Text text=""/></Column>
+                                <Column width="150px"><Text text=""/></Column>
+                                <Column width="150px"><Text text=""/></Column>
+                                <Column width="130px" hAlign="End"><Text text=""/></Column>
                                 <Column width="130px" hAlign="End"><Text text=""/></Column>
                                 <Column width="130px" hAlign="End"><Text text=""/></Column>
                                 <Column width="130px" hAlign="End"><Text text=""/></Column>
@@ -258,10 +258,14 @@
                             <items>
                                 <ColumnListItem highlight="Success">
                                     <cells>
-                                        <ObjectStatus text="{chartModel>rowLabel}" state="Success"/>
+                                        <Text text="{chartModel>costCenter} - {chartModel>costCenterText}"/>
+                                        <Text text="{chartModel>companyCode} - {chartModel>companyName}"/>
+                                        <Text text="{chartModel>department}"/>
+                                        <Text text="{chartModel>currency}"/>
+                                        <ObjectNumber emphasized="true" number="{path:'chartModel>availableBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
+                                        <ObjectNumber emphasized="true" number="{path:'chartModel>totalApprovedBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
                                         <ObjectNumber emphasized="true" number="{path:'chartModel>ccBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
                                         <ObjectNumber emphasized="true" number="{path:'chartModel>ioBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
-                                        <ObjectNumber emphasized="true" number="{path:'chartModel>availableBudget', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
                                         <ObjectNumber emphasized="true" number="{path:'chartModel>prCommitStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
                                         <ObjectNumber emphasized="true" number="{path:'chartModel>prAsset', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
                                         <ObjectNumber emphasized="true" number="{path:'chartModel>prCommitNonStock', type:'sap.ui.model.type.Float', formatOptions:{minFractionDigits:2, maxFractionDigits:2, groupingEnabled:true}}"/>
